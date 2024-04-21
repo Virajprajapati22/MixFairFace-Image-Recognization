@@ -39,6 +39,7 @@ train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
 
 # Initialize your model
 model = ResNet34WithMid()
+batch = []
 
 # Define your custom loss function
 class MixFairFaceLoss(nn.Module):
@@ -52,25 +53,30 @@ class MixFairFaceLoss(nn.Module):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, input, label):
-        # Reshape input tensor to (batch_size, in_features)
-        input = input.view(input.size(0), -1)
+        img_x = batch['rgb']
+        class_x = batch['label']
+        attribute_x = batch['attribute']
         
-        # Transpose weight matrix
-        weight = F.normalize(self.weight)
+        ###
+        feat = self.model.encoder(img_x)['l4']
+        feat_a = F.normalize(self.model.mid(feat.flatten(1)))
         
-        # Compute cosine similarity
-        cosine = F.linear(F.normalize(input), weight)
+        indices = torch.randperm(feat.shape[0])
+        feat_b = feat_a[indices]
+        feat_mix = 0.5 * feat + 0.5 * feat[indices]
+        feat_mix = F.normalize(self.model.mid(feat_mix.flatten(1)))
 
-        # Compute one-hot encoding for the labels
-        one_hot = F.one_hot(label, self.out_features).float()
+        diff = ((feat_mix * feat_b).sum(-1, keepdim=True))**2 - ((feat_mix * feat_a).sum(-1, keepdim=True))**2
+        pred = self.model.product(feat_a, class_x, diff)
+        ####
+        loss = nn.CrossEntropyLoss()(pred, class_x)
 
-        # Compute output logits
-        output = self.s * (cosine - one_hot * self.m)
-        
-        # Compute sum of loss across all elements
-        loss = F.cross_entropy(output, label)
-        
-        return loss
+        out = {
+                'loss': loss,
+            }
+        self.log('entropy-loss', loss, on_step=True)
+
+        return out
 
 # Get the number of classes from the train_data object
 num_classes = len(train_dataset.classes)
