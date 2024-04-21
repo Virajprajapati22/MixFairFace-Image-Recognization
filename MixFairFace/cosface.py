@@ -25,10 +25,10 @@ class CosFaceLoss(nn.Module):
         input = input.view(input.size(0), -1)
         
         # Transpose weight matrix
-        weight = self.weight.t()
-
+        weight = F.normalize(self.weight)
+        
         # Compute cosine similarity
-        cosine = F.linear(F.normalize(input), F.normalize(weight).T)
+        cosine = F.linear(F.normalize(input), weight)
 
         # Compute one-hot encoding for the labels
         one_hot = F.one_hot(label, self.out_features).float()
@@ -37,7 +37,7 @@ class CosFaceLoss(nn.Module):
         output = self.s * (cosine - one_hot * self.m)
         
         # Compute sum of loss across all elements
-        loss = torch.sum(output)
+        loss = F.cross_entropy(output, label)
         
         return loss
 
@@ -87,7 +87,7 @@ for epoch in range(num_epochs):
             # Pass the images through the model and reshape the output
             outputs = model(images)
             outputs = outputs.view(outputs.size(0), -1)
-            
+
             # Calculate loss
             loss = criterion(outputs, labels)
             
